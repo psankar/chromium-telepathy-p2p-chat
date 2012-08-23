@@ -1,0 +1,73 @@
+From 37cf1f3c4fcc4de7b17f80d8027a218362598dde Mon Sep 17 00:00:00 2001
+From: Sankar P <sankar.curiosity@gmail.com>
+Date: Thu, 29 Sep 2011 23:50:13 +0530
+Subject: [PATCH 05/11] Added GetArattaiContacts API to the TelepathyBridge class
+
+---
+ chrome/browser/ui/webui/arattai_contact.cc        |    5 +++++
+ chrome/browser/ui/webui/arattai_contact.h         |    1 +
+ chrome/browser/ui/webui/arattai_telepathy_bean.cc |   12 ++++++++++++
+ chrome/browser/ui/webui/arattai_telepathy_bean.h  |    1 +
+ 4 files changed, 19 insertions(+), 0 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/arattai_contact.cc b/chrome/browser/ui/webui/arattai_contact.cc
+index 415d136..2ad4aaf 100644
+--- a/chrome/browser/ui/webui/arattai_contact.cc
++++ b/chrome/browser/ui/webui/arattai_contact.cc
+@@ -13,3 +13,8 @@ void ArattaiContact::PrintContact ()
+ {
+   cout << "Id:" << identifier << "\t alias: " << alias << endl;
+ }
++
++string ArattaiContact::GetAlias ()
++{
++  return alias;
++}
+diff --git a/chrome/browser/ui/webui/arattai_contact.h b/chrome/browser/ui/webui/arattai_contact.h
+index 6598eb4..88d8f6c 100644
+--- a/chrome/browser/ui/webui/arattai_contact.h
++++ b/chrome/browser/ui/webui/arattai_contact.h
+@@ -8,4 +8,5 @@ class ArattaiContact
+  public:
+   ArattaiContact (std::string identifier, std::string alias);
+   void PrintContact ();
++  std::string GetAlias ();
+ };
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bean.cc b/chrome/browser/ui/webui/arattai_telepathy_bean.cc
+index 2959251..2629a77 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bean.cc
++++ b/chrome/browser/ui/webui/arattai_telepathy_bean.cc
+@@ -34,6 +34,18 @@ void ArattaiTelepathyBean::PrintArattaiContacts ()
+   }
+ }
+ 
++string * ArattaiTelepathyBean::GetArattaiContacts ()
++{
++  string *buddies;
++  buddies = new string[contacts.size()];
++  for (int i=0; i<contacts.size(); i++) {
++    //Copy the vector to the string
++    buddies[i] = ((ArattaiContact *) contacts[i])->GetAlias ();
++  }
++
++  return buddies;
++}
++
+ /*
+    int main()
+    {
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bean.h b/chrome/browser/ui/webui/arattai_telepathy_bean.h
+index 81fe047..8dc5a0c 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bean.h
++++ b/chrome/browser/ui/webui/arattai_telepathy_bean.h
+@@ -17,6 +17,7 @@ class ArattaiTelepathyBean
+ 
+   void AddArattaiContact (std::string id, std::string al);
+   void PrintArattaiContacts ();
++  std::string * GetArattaiContacts ();
+ 
+   int locked;
+ };
+-- 
+1.7.3.4
+

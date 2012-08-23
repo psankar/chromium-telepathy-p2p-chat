@@ -1,0 +1,308 @@
+From 4c56fe2b5749e059c1d9d013a6f8a004e8804c25 Mon Sep 17 00:00:00 2001
+From: Sankar P <sankar.curiosity@gmail.com>
+Date: Tue, 4 Oct 2011 11:04:04 +0530
+Subject: [PATCH 11/11] Rudimentary Message sending/receiving support
+
+---
+ chrome/browser/resources/arattai.html              |    2 +-
+ chrome/browser/resources/arattai.js                |   12 ++++
+ chrome/browser/ui/webui/arattai_telepathy_bean.cc  |    5 ++
+ chrome/browser/ui/webui/arattai_telepathy_bean.h   |    3 +
+ .../browser/ui/webui/arattai_telepathy_bridge.cc   |   64 +++++++++++++++++++-
+ chrome/browser/ui/webui/arattai_telepathy_bridge.h |    6 ++
+ chrome/browser/ui/webui/arattai_ui.cc              |   44 +++++++++++++
+ chrome/browser/ui/webui/arattai_ui.h               |    5 ++
+ 8 files changed, 139 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/resources/arattai.html b/chrome/browser/resources/arattai.html
+index 495ecfa..921f8c8 100644
+--- a/chrome/browser/resources/arattai.html
++++ b/chrome/browser/resources/arattai.html
+@@ -21,7 +21,7 @@
+ 
+ 		<div id="html-chat-area">
+ 			<b>Chat Area</b></br>
+-			<textarea readonly="true" id="html-converation-view" rows="20" ></textarea></br>
++			<textarea readonly="true" id="html-conversation-view" rows="20" ></textarea></br>
+ 			<input type="text" id="html-chat-box" />
+ 			<input type="button" value="Send" id="html-send-button" onclick="send_chat_message();" />
+ 		</div>
+diff --git a/chrome/browser/resources/arattai.js b/chrome/browser/resources/arattai.js
+index 2a58c05..f42326c 100644
+--- a/chrome/browser/resources/arattai.js
++++ b/chrome/browser/resources/arattai.js
+@@ -18,10 +18,21 @@ function arattai_add_contact () {
+ 	}
+ };
+ 
++function arattai_add_chat_message (reply) {
++	var chat_area = document.getElementById('html-conversation-view');
++	chat_area.value += reply + '\n';
++};
++
++function get_chat_messages () {
++	chrome.send('getChatMessage');
++};
++
+ function refresh_contacts () {
+ 	chrome.send('listChatContacts');
+ 	var thearea = document.getElementById('contacts-list-area');
+ 	thearea.style.display = "block";
++
++	var interval = setInterval(get_chat_messages, 1000);
+ };
+ 
+ function signout () {
+@@ -49,4 +60,5 @@ function send_chat_message () {
+ 	var chatbox = document.getElementById("html-chat-box");
+ 	var content = chatbox.value;
+ 	chrome.send('sendChatMessage', [content]);
++	chatbox.value = "";
+ };
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bean.cc b/chrome/browser/ui/webui/arattai_telepathy_bean.cc
+index 02e90ed..16ec7e1 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bean.cc
++++ b/chrome/browser/ui/webui/arattai_telepathy_bean.cc
+@@ -47,6 +47,11 @@ vector <const base::Value *> * ArattaiTelepathyBean::GetArattaiContacts ()
+   return buddies;
+ }
+ 
++void ArattaiTelepathyBean::ReceivedMessageFromContact (char * message)
++{
++  received_messages.push_back (new base::StringValue (message));
++}
++
+ /*
+    int main()
+    {
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bean.h b/chrome/browser/ui/webui/arattai_telepathy_bean.h
+index ce4a777..04db813 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bean.h
++++ b/chrome/browser/ui/webui/arattai_telepathy_bean.h
+@@ -23,8 +23,11 @@ class ArattaiTelepathyBean
+   void AddArattaiContact (std::string id, std::string al);
+   void PrintArattaiContacts ();
+   std::vector <const base::Value *> * GetArattaiContacts ();
++  
++  void ReceivedMessageFromContact (char * message);
+ 
+   int locked;
++  std::vector <const base::Value *> received_messages;
+ };
+ 
+ #endif // CHROME_ARATTAI_TELEPATHY_BEAN_H_
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bridge.cc b/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
+index d9a6d7f..56ef242 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
++++ b/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
+@@ -154,6 +154,62 @@ void TelepathyBridge::SendChat (const char *message)
+   g_object_unref (msg);
+ }
+ 
++void TelepathyBridge::message_received_cb (TpTextChannel *self,
++                                           TpSignalledMessage *smessage,
++                                           gpointer user_data)
++{
++  cout << "Message received callback" << endl;
++  gchar *message_body;
++  TpMessage *message;
++
++  message = (TpMessage *) smessage;
++
++  if (tp_message_is_delivery_report (message)) {
++    cout << "Delivery report received. Good." << endl;
++    return;
++  }
++
++  message_body = tp_message_to_text (message, NULL);
++
++  if (message_body == NULL) {
++    cout << "Empty message with NonTextContent, ignoring and acking." << endl;
++
++    tp_text_channel_ack_message_async (TP_TEXT_CHANNEL (self),
++                                       message, NULL, NULL);
++    return;
++  } else {
++    cout << "Message received: " << message_body << endl;
++
++    ArattaiTelepathyBean *bean= (ArattaiTelepathyBean *) user_data;
++    /* FIXME: The below API will work only after telepathy-glib 0.16 
++    TpContact *contact = tp_channel_get_target_contact (TP_CHANNEL (self));
++    bean->ReceivedMessageFromContact (tp_contact_get_alias (contact), message_body);
++    */
++
++    bean->ReceivedMessageFromContact (message_body);
++  }
++
++  g_free (message_body);
++}
++
++static void
++incoming_messages_feature_activate_cb (GObject *source_object,
++    GAsyncResult *result,
++    gpointer user_data)
++{
++  cout << "Incoming messages feature activation" << endl;
++  GError *error = NULL;
++
++  if (!tp_proxy_prepare_finish (TP_CHANNEL (source_object), result, &error))
++  {
++    cout << "Failed to prepare incoming messages feature: " << error->message << endl;
++    g_clear_error (&error);
++    return;
++  }
++
++  cout << "Incoming messages features activation function exited" << endl;
++}
++
+ 
+ void TelepathyBridge::chat_channel_ready (TpChannel  *channel,
+                                           const GError *in_error,
+@@ -167,6 +223,9 @@ void TelepathyBridge::chat_channel_ready (TpChannel  *channel,
+ 
+   cout << "Channel type is : " << tp_channel_get_channel_type (channel) << endl;
+ 
++  GQuark features[] = { TP_TEXT_CHANNEL_FEATURE_INCOMING_MESSAGES };
++  tp_proxy_prepare_async (channel, features, incoming_messages_feature_activate_cb, bean);
++
+   TpTextChannel *text;
+   text = (TpTextChannel *) channel;
+   chat_channel = text;
+@@ -175,7 +234,10 @@ void TelepathyBridge::chat_channel_ready (TpChannel  *channel,
+   msg = tp_client_message_new_text (TP_CHANNEL_TEXT_MESSAGE_TYPE_NORMAL,
+                                     "Chat channel opened");
+ 
+-  tp_text_channel_send_message_async (text, msg, TP_MESSAGE_SENDING_FLAG_REPORT_DELIVERY, NULL, NULL);
++  //tp_text_channel_send_message_async (text, msg, TP_MESSAGE_SENDING_FLAG_REPORT_DELIVERY, NULL, NULL);
++
++  g_signal_connect (text, "message-received",
++                    G_CALLBACK (message_received_cb), bean);
+ 
+   g_object_unref (msg);
+ 
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bridge.h b/chrome/browser/ui/webui/arattai_telepathy_bridge.h
+index 1d162b3..c4c96ae 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bridge.h
++++ b/chrome/browser/ui/webui/arattai_telepathy_bridge.h
+@@ -100,6 +100,12 @@ class TelepathyBridge
+                              const GError *in_error,
+                              gpointer  user_data,
+                              GObject  *weak_obj);
++
++
++  static void message_received_cb (TpTextChannel *self,
++                                   TpSignalledMessage *message,
++                                   gpointer user_data);
++
+  public:
+ 
+   static void Initialize (ArattaiTelepathyBean *bean);
+diff --git a/chrome/browser/ui/webui/arattai_ui.cc b/chrome/browser/ui/webui/arattai_ui.cc
+index 1ed29bb..f8e919a 100644
+--- a/chrome/browser/ui/webui/arattai_ui.cc
++++ b/chrome/browser/ui/webui/arattai_ui.cc
+@@ -3,11 +3,13 @@
+ 
+ using namespace std;
+ 
++#include "base/bind.h"
+ #include "base/values.h"
+ #include "chrome/browser/ui/webui/arattai_ui.h"
+ #include "chrome/browser/ui/webui/arattai_telepathy_bridge.h"
+ #include "chrome/browser/ui/webui/arattai_contact.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "content/browser/browser_thread.h"
+ #include "content/browser/tab_contents/tab_contents.h"
+ #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
+ #include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
+@@ -50,8 +52,34 @@ void ArattaiHandler::RegisterMessages() {
+  web_ui_->RegisterMessageCallback("sendChatMessage",
+       (WebUI::MessageCallback *) NewCallback(this,
+           &ArattaiHandler::SendChatMessage));
++
++ web_ui_->RegisterMessageCallback("getChatMessage",
++      (WebUI::MessageCallback *) NewCallback(this,
++          &ArattaiHandler::GetChatMessage));
++}
++
++void ArattaiHandler::GetChatMessage ()
++{
++  if (bean->received_messages.empty()) {
++    cout << "No message received " << endl;
++    return ;
++  }
++
++  std::vector<const base::Value*>::const_iterator i;
++
++  const base::Value *reply;
++  /* TODO: Add a lock here. This may lead to a crash when the user signs out and
++   * the received_messages(bean) suddenly disappears
++   */
++  for (i = bean->received_messages.begin(); i != bean->received_messages.end(); ++i) {
++    reply = static_cast<const base::Value *> (*i);
++    web_ui_->CallJavascriptFunction("arattai_add_chat_message", *reply);
++  }
++
++  bean->received_messages.clear();
+ }
+ 
++
+ void ArattaiHandler::SendChatMessage (const ListValue* args) {
+ 
+   cout << "SendChatMessage in ArattaiHandler called" << endl;
+@@ -75,6 +103,21 @@ void ArattaiHandler::SendChatMessage (const ListValue* args) {
+   }
+ }
+ 
++/* TODO: As of now I am using Javascript to check for
++ * received messages, by polling once every second.
++ * We probably need a better mechanism (like events)
++ */
++void ArattaiHandler::ReceiveMessagesInfinitelyInALoop () {
++  while (1) {
++    while (bean->received_messages.empty()) {
++    }
++    cout << "message received is: " << bean->received_messages.front () << endl;
++    bean->received_messages.clear ();
++
++  }
++}
++
++
+ void ArattaiHandler::OpenChatChannel (const ListValue* args) {
+ 
+   cout << "OpenChatChannel in ArattaiHandler called" << endl;
+@@ -95,6 +138,7 @@ void ArattaiHandler::OpenChatChannel (const ListValue* args) {
+     cout << "Chat Open request for " << contact_id << endl;
+ 
+     TelepathyBridge::OpenChatChannel (bean, contact_id);
++    //BrowserThread::PostTask (BrowserThread::IO, FROM_HERE, NewRunnableMethod (this, &ArattaiHandler::ReceiveMessagesInfinitelyInALoop));
+   }
+ }
+ 
+diff --git a/chrome/browser/ui/webui/arattai_ui.h b/chrome/browser/ui/webui/arattai_ui.h
+index 043ddbf..735da3c 100644
+--- a/chrome/browser/ui/webui/arattai_ui.h
++++ b/chrome/browser/ui/webui/arattai_ui.h
+@@ -14,6 +14,10 @@ class ArattaiUI : public ChromeWebUI {
+ class ArattaiHandler : public WebUIMessageHandler {
+  private:
+   ArattaiTelepathyBean *bean;
++
++  /* UGLYHACK , but not used and instead used JS effectively */
++  void ReceiveMessagesInfinitelyInALoop ();
++
+  public:
+   virtual WebUIMessageHandler* Attach(WebUI* web_ui) OVERRIDE;
+   virtual void RegisterMessages();
+@@ -25,6 +29,7 @@ class ArattaiHandler : public WebUIMessageHandler {
+ 
+   void OpenChatChannel (const ListValue* args);
+   void SendChatMessage (const ListValue* args);
++  void GetChatMessage ();
+ };
+ 
+ #endif  // CHROME_BROWSER_UI_ArattaiUI_H_
+-- 
+1.7.3.4
+

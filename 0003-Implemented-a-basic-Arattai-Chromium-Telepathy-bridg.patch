@@ -1,0 +1,523 @@
+From e6bfc38bcb5465668b3021ce08e02ea158718553 Mon Sep 17 00:00:00 2001
+From: Sankar P <sankar.curiosity@gmail.com>
+Date: Thu, 29 Sep 2011 21:11:20 +0530
+Subject: [PATCH 03/11] Implemented a basic Arattai/Chromium <-> Telepathy bridge
+
+Files/Classes Added:
+====================
+
+arattai_contact.cc/h 		= Every chattable contact is represented
+				by this class. Currently supports
+				FirstName and LastName only. Will be
+				extended in the near future.
+
+arattai_telepathy_bridge.cc/h	= A static class which functions as a
+				bridge between the telepathy library and
+				the chromium classes. All public
+				functions are in Chromium style and the
+				private functions are in C/telepathy
+				style.
+
+arattai_telepathy_bean.cc/h	= An object which will form the core of
+				the communication between the bridge and
+				the chromium sources. The bean maintains
+				the state across chrome and the static
+				class (bridge).
+---
+ chrome/browser/ui/webui/arattai_contact.cc         |   15 ++
+ chrome/browser/ui/webui/arattai_contact.h          |   11 +
+ chrome/browser/ui/webui/arattai_telepathy_bean.cc  |   45 ++++
+ chrome/browser/ui/webui/arattai_telepathy_bean.h   |   22 ++
+ .../browser/ui/webui/arattai_telepathy_bridge.cc   |  260 ++++++++++++++++++++
+ chrome/browser/ui/webui/arattai_telepathy_bridge.h |   91 +++++++
+ 6 files changed, 444 insertions(+), 0 deletions(-)
+ create mode 100644 chrome/browser/ui/webui/arattai_contact.cc
+ create mode 100644 chrome/browser/ui/webui/arattai_contact.h
+ create mode 100644 chrome/browser/ui/webui/arattai_telepathy_bean.cc
+ create mode 100644 chrome/browser/ui/webui/arattai_telepathy_bean.h
+ create mode 100644 chrome/browser/ui/webui/arattai_telepathy_bridge.cc
+ create mode 100644 chrome/browser/ui/webui/arattai_telepathy_bridge.h
+
+diff --git a/chrome/browser/ui/webui/arattai_contact.cc b/chrome/browser/ui/webui/arattai_contact.cc
+new file mode 100644
+index 0000000..415d136
+--- /dev/null
++++ b/chrome/browser/ui/webui/arattai_contact.cc
+@@ -0,0 +1,15 @@
++#include "arattai_contact.h"
++
++#include <iostream>
++using namespace std;
++
++ArattaiContact::ArattaiContact (std::string id, std::string al)
++{
++  identifier = id;
++  alias = al;
++}
++
++void ArattaiContact::PrintContact ()
++{
++  cout << "Id:" << identifier << "\t alias: " << alias << endl;
++}
+diff --git a/chrome/browser/ui/webui/arattai_contact.h b/chrome/browser/ui/webui/arattai_contact.h
+new file mode 100644
+index 0000000..6598eb4
+--- /dev/null
++++ b/chrome/browser/ui/webui/arattai_contact.h
+@@ -0,0 +1,11 @@
++#include <string>
++
++class ArattaiContact
++{
++ private:
++  std::string alias;
++  std::string identifier;
++ public:
++  ArattaiContact (std::string identifier, std::string alias);
++  void PrintContact ();
++};
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bean.cc b/chrome/browser/ui/webui/arattai_telepathy_bean.cc
+new file mode 100644
+index 0000000..2959251
+--- /dev/null
++++ b/chrome/browser/ui/webui/arattai_telepathy_bean.cc
+@@ -0,0 +1,45 @@
++#include "arattai_telepathy_bean.h"
++
++#include <iostream>
++using namespace std;
++
++ArattaiTelepathyBean::ArattaiTelepathyBean (string fname, string lname)
++{
++  first_name = fname;
++  last_name = lname;
++  locked = 0;
++  contacts.reserve (10);
++}
++
++string ArattaiTelepathyBean::GetFirstName ()
++{
++  return first_name;
++}
++
++string ArattaiTelepathyBean::GetLastName ()
++{
++  return last_name;
++}
++
++void ArattaiTelepathyBean::AddArattaiContact (string id, string al)
++{
++  ArattaiContact *a = new ArattaiContact (id, al);
++  contacts.push_back (a);
++}
++
++void ArattaiTelepathyBean::PrintArattaiContacts ()
++{
++  for (int i=0; i<contacts.size(); i++) {
++    ((ArattaiContact *)contacts[i])->PrintContact ();
++  }
++}
++
++/*
++   int main()
++   {
++   ArattaiTelepathyBean *bean;
++   bean = new ArattaiTelepathyBean ();
++   cout << "First name is : " << bean->GetFirstName() << endl << "Last name is : " << bean->GetLastName();
++   return 0;
++   }
++   */
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bean.h b/chrome/browser/ui/webui/arattai_telepathy_bean.h
+new file mode 100644
+index 0000000..81fe047
+--- /dev/null
++++ b/chrome/browser/ui/webui/arattai_telepathy_bean.h
+@@ -0,0 +1,22 @@
++#include "arattai_contact.h"
++
++#include <string>
++#include <vector>
++
++class ArattaiTelepathyBean
++{
++ private:
++  std::string first_name;
++  std::string last_name;
++  std::vector <ArattaiContact *> contacts;
++
++ public:
++  ArattaiTelepathyBean (std::string fname="Chromium", std::string lname="Browser");
++  std::string GetFirstName ();
++  std::string GetLastName ();
++
++  void AddArattaiContact (std::string id, std::string al);
++  void PrintArattaiContacts ();
++
++  int locked;
++};
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bridge.cc b/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
+new file mode 100644
+index 0000000..1f56dc0
+--- /dev/null
++++ b/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
+@@ -0,0 +1,260 @@
++#include "arattai_telepathy_bridge.h"
++
++#include <iostream>
++using namespace std;
++
++void TelepathyBridge::handle_error (const GError *error)
++{
++  if (error)
++  {
++    cout << "ERROR: \n" << error->message << endl;
++    tp_cli_connection_call_disconnect (conn, -1, NULL,
++                                       NULL, NULL, NULL);
++  }
++}
++
++void TelepathyBridge::group_members_changed_cb (TpChannel  *channel,
++                                                 char   *message,
++                                                 GArray  *added,
++                                                 GArray  *removed,
++                                                 GArray  *local_pending,
++                                                 GArray  *remote_pending,
++                                                 guint    actor,
++                                                 guint    reason,
++                                                 char **user_data)
++{
++  cout << "Members changed. Should update the view." << endl;
++  /* TODO: Remember to use the bean->locked variable when you are implementing this */
++}
++
++void TelepathyBridge::handle_to_contact (TpConnection *connection,
++                                          guint n_contacts,
++                                          TpContact * const *contacts,
++                                          guint n_failed,
++                                          const TpHandle *failed,
++                                          const GError *error,
++                                          gpointer user_data,
++                                          GObject *weak_object)
++{
++  ArattaiTelepathyBean *bean= (ArattaiTelepathyBean *) user_data;
++
++  int i;
++
++  /* TODO: a simple lock implemented using an int. We need a better mutex later */
++  while (bean->locked);
++  bean->locked = 1;
++
++  for (i=0; i < n_contacts; i++) {
++    bean->AddArattaiContact (tp_contact_get_identifier (contacts [i]), tp_contact_get_alias (contacts [i]));
++  }
++
++  /* print part */
++  bean->PrintArattaiContacts();
++  bean->locked = 0;
++
++}
++
++void TelepathyBridge::contact_list_channel_ready (TpChannel  *channel,
++                                                   const GError *in_error,
++                                                   gpointer   user_data)
++{
++  ArattaiTelepathyBean *bean= (ArattaiTelepathyBean *) user_data;
++  GError *error = NULL;
++
++  handle_error (in_error);
++
++  cout << " > contact_list_channel_ready" << endl;
++
++  g_signal_connect (channel, "group-members-changed",
++                    G_CALLBACK (group_members_changed_cb), bean);
++
++  const TpIntSet *members = tp_channel_group_get_members (channel);
++  GArray *handles = tp_intset_to_array (members);
++
++  static TpContactFeature features[] = {
++    TP_CONTACT_FEATURE_ALIAS,
++    TP_CONTACT_FEATURE_PRESENCE
++  };
++
++  tp_connection_get_contacts_by_handle (conn, handles->len, (const TpHandle *) handles->data, G_N_ELEMENTS (features), features, handle_to_contact, bean, NULL, NULL);
++
++}
++
++void TelepathyBridge::create_contact_list_channel_cb (TpConnection *conn,
++                                                       gboolean  yours,
++                                                       const char *object_path,
++                                                       GHashTable *properties,
++                                                       const GError *in_error,
++                                                       gpointer  user_data,
++                                                       GObject  *weak_obj)
++{
++  ArattaiTelepathyBean *bean= (ArattaiTelepathyBean *) user_data;
++  GError *error = NULL;
++
++  handle_error (in_error);
++
++  TpChannel *channel = tp_channel_new_from_properties (conn, object_path,
++                                                       properties, &error);
++  handle_error (error);
++
++  tp_channel_call_when_ready (channel, contact_list_channel_ready, bean);
++}
++
++
++void TelepathyBridge::conn_ready (TpConnection *conn,
++                                   const GError *in_error,
++                                   gpointer   user_data)
++{
++  ArattaiTelepathyBean *bean= (ArattaiTelepathyBean *) user_data;
++  GError *error = NULL;
++
++  g_print (" > conn_ready\n");
++
++  handle_error (in_error);
++
++  /* check if the Requests interface is available */
++  if (tp_proxy_has_interface_by_id (conn,
++                                    TP_IFACE_QUARK_CONNECTION_INTERFACE_REQUESTS))
++  {
++    /* we need to ensure a contact list */
++    GHashTable *props = tp_asv_new (
++        TP_PROP_CHANNEL_CHANNEL_TYPE,
++        G_TYPE_STRING,
++        TP_IFACE_CHANNEL_TYPE_CONTACT_LIST,
++
++        TP_PROP_CHANNEL_TARGET_HANDLE_TYPE,
++        G_TYPE_UINT,
++        TP_HANDLE_TYPE_LIST,
++
++        TP_PROP_CHANNEL_TARGET_ID,
++        G_TYPE_STRING,
++        "subscribe",
++
++        NULL);
++
++    tp_cli_connection_interface_requests_call_ensure_channel (
++        conn, -1, props,
++        create_contact_list_channel_cb,
++        bean, NULL, NULL);
++    g_hash_table_destroy (props);
++  }
++}
++
++void TelepathyBridge::status_changed_cb (TpConnection *conn,
++                                          guint  status,
++                                          guint  reason,
++                                          gpointer  user_data,
++                                          GObject *weak_object)
++{
++  if (status == TP_CONNECTION_STATUS_DISCONNECTED)
++  {
++    g_print ("Disconnected\n");
++  }
++  else if (status == TP_CONNECTION_STATUS_CONNECTED)
++  {
++    g_print ("Connected\n");
++  }
++}
++
++void TelepathyBridge::request_connection_cb (TpConnectionManager *cm,
++                                              const char  *bus_name,
++                                              const char  *object_path,
++                                              const GError  *in_error,
++                                              gpointer    user_data,
++                                              GObject   *weak_object)
++{
++  ArattaiTelepathyBean *bean= (ArattaiTelepathyBean *) user_data;
++  GError *error = NULL;
++
++  if (in_error) g_error ("%s", in_error->message);
++
++  conn = tp_connection_new (bus_daemon, bus_name, object_path, &error);
++  if (error) g_error ("%s", error->message);
++
++  tp_connection_call_when_ready (conn, conn_ready, bean);
++
++  tp_cli_connection_connect_to_status_changed (conn, status_changed_cb,
++                                               NULL, NULL, NULL, &error);
++  handle_error (error);
++
++  /* initiate the connection */
++  tp_cli_connection_call_connect (conn, -1, NULL, NULL, NULL, NULL);
++}
++
++
++void TelepathyBridge::cm_ready (TpConnectionManager *cm,
++                                 const GError  *in_error,
++                                 gpointer   user_data,
++                                 GObject  *weak_obj)
++{
++  ArattaiTelepathyBean *bean= (ArattaiTelepathyBean *) user_data;
++
++  if (in_error) g_error ("%s", in_error->message);
++
++  const TpConnectionManagerProtocol *prot = tp_connection_manager_get_protocol (cm, "local-xmpp");
++  if (!prot) g_error ("Protocol is not supported");
++
++  /* request a new connection */
++  GHashTable *parameters = tp_asv_new (
++      "first-name", G_TYPE_STRING, bean->GetFirstName().c_str(),/* FIXME: Should we free this char array ? */
++      "last-name", G_TYPE_STRING, bean->GetLastName().c_str(),
++      NULL);
++
++  tp_cli_connection_manager_call_request_connection (cm, -1,
++                                                     "local-xmpp",
++                                                     parameters,
++                                                     request_connection_cb,
++                                                     bean, NULL, NULL);
++
++  g_hash_table_destroy (parameters);
++}
++
++void TelepathyBridge::interrupt_cb (int signal)
++{
++  /* disconnect */
++  tp_cli_connection_call_disconnect (conn, -1, NULL, NULL, NULL, NULL);
++  g_main_loop_quit (loop);
++}
++
++void TelepathyBridge::Initialize (ArattaiTelepathyBean *bean)
++{
++  GError *error = NULL;
++  loop = NULL;
++
++  g_type_init ();
++
++  loop = g_main_loop_new (NULL, FALSE);
++  bus_daemon = tp_dbus_daemon_dup (&error);
++  if (bus_daemon == NULL)
++  {
++    g_error ("%s", error->message);
++  }
++
++  TpConnectionManager *cm = tp_connection_manager_new (bus_daemon,
++                                                       "salut", NULL, &error);
++  if (error) g_error ("%s", error->message);
++
++  tp_connection_manager_call_when_ready (cm, cm_ready,
++                                         bean, NULL, NULL);
++
++  /* set up a signal handler */
++  struct sigaction sa = { 0 };
++  sa.sa_handler = interrupt_cb;
++  sigaction (SIGINT, &sa, NULL);
++
++  g_main_loop_run (loop);
++  g_object_unref (bus_daemon);
++}
++
++int main()
++{
++  ArattaiTelepathyBean *bean;
++
++  bean = new ArattaiTelepathyBean ();
++  TelepathyBridge::Initialize (bean);
++
++
++  g_main_loop_quit (loop);
++
++  return 0;
++}
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bridge.h b/chrome/browser/ui/webui/arattai_telepathy_bridge.h
+new file mode 100644
+index 0000000..1e5f8d0
+--- /dev/null
++++ b/chrome/browser/ui/webui/arattai_telepathy_bridge.h
+@@ -0,0 +1,91 @@
++#include <unistd.h>
++#include <string.h>
++
++#include <glib.h>
++#include <glib-object.h>
++#include <gio/gio.h>
++
++#include <telepathy-glib/telepathy-glib.h>
++
++#include "arattai_telepathy_bean.h"
++
++static TpDBusDaemon *bus_daemon;
++static TpConnection *conn;
++static GMainLoop *loop;
++
++/* This can be converted into a generic TelepathyBridge in future, if needed.
++ * As of now, this is just a xmpp bridge. 
++ */
++class TelepathyBridge 
++{
++ private:
++  /* The private functions follow telepathy coding style,
++   * whereas the public functions will follow chromium coding style,
++   * so as to enable easy access to the Bridge APIs from chromium sources.
++   */
++
++  static void handle_error (const GError *error);
++
++  static void handle_to_contact (TpConnection *connection,
++                                 guint n_contacts,
++                                 TpContact * const *contacts,
++                                 guint n_failed,
++                                 const TpHandle *failed,
++                                 const GError *error,
++                                 gpointer user_data,
++                                 GObject *weak_object);
++
++  static void group_members_changed_cb (TpChannel  *channel,
++                                        char   *message,
++                                        GArray  *added,
++                                        GArray  *removed,
++                                        GArray  *local_pending,
++                                        GArray  *remote_pending,
++                                        guint    actor,
++                                        guint    reason,
++                                        char  **argv);
++
++  static void contact_list_channel_ready (TpChannel  *channel,
++                                          const GError *in_error,
++                                          gpointer   user_data);
++
++  static void create_contact_list_channel_cb (TpConnection *conn,
++                                              gboolean  yours,
++                                              const char *object_path,
++                                              GHashTable *properties,
++                                              const GError *in_error,
++                                              gpointer  user_data,
++                                              GObject  *weak_obj);
++
++  static void conn_ready (TpConnection *conn,
++                          const GError *in_error,
++                          gpointer   user_data);
++
++  static void status_changed_cb (TpConnection *conn,
++                                 guint  status,
++                                 guint  reason,
++                                 gpointer  user_data,
++                                 GObject *weak_object);
++
++  static void request_connection_cb (TpConnectionManager *cm,
++                                     const char  *bus_name,
++                                     const char  *object_path,
++                                     const GError  *in_error,
++                                     gpointer    user_data,
++                                     GObject   *weak_object);
++
++  static void cm_ready (TpConnectionManager *cm,
++                        const GError  *in_error,
++                        gpointer   user_data,
++                        GObject  *weak_obj);
++
++  static void interrupt_cb (int signal);
++
++ public:
++
++  static void Initialize (ArattaiTelepathyBean *bean);
++
++  static void Initialize_chat (ArattaiTelepathyBean *bean, char *contact_name);
++
++  static void Shutdown (ArattaiTelepathyBean *bean);
++};
+-- 
+1.7.3.4
+

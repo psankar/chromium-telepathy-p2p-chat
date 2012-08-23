@@ -1,0 +1,333 @@
+From e26acb10cd7ce63eec43f5327237899b339f3da7 Mon Sep 17 00:00:00 2001
+From: Sankar P <sankar.curiosity@gmail.com>
+Date: Mon, 3 Oct 2011 01:54:10 +0530
+Subject: [PATCH 09/11] Sending chat messages from the browser to contacts. basic support.
+
+---
+ chrome/browser/resources/arattai.html              |    9 +-
+ chrome/browser/resources/arattai.js                |   16 ++++
+ chrome/browser/ui/webui/arattai_contact.cc         |    5 +
+ chrome/browser/ui/webui/arattai_contact.h          |    1 +
+ chrome/browser/ui/webui/arattai_telepathy_bean.cc  |    2 +-
+ .../browser/ui/webui/arattai_telepathy_bridge.cc   |   89 ++++++++++++++++++++
+ chrome/browser/ui/webui/arattai_telepathy_bridge.h |   23 +++++-
+ chrome/browser/ui/webui/arattai_ui.cc              |   54 ++++++++++++
+ chrome/browser/ui/webui/arattai_ui.h               |    3 +
+ 9 files changed, 195 insertions(+), 7 deletions(-)
+
+diff --git a/chrome/browser/resources/arattai.html b/chrome/browser/resources/arattai.html
+index 8d62b19..0d63183 100644
+--- a/chrome/browser/resources/arattai.html
++++ b/chrome/browser/resources/arattai.html
+@@ -7,16 +7,17 @@
+ 	<body>
+ 		<h1> Arattai (Chat) </h1>
+ 		<input value="Signin & Refresh Contacts" type="button" onclick="refresh_contacts();"></input>
+-		<input value="Signout" type="button" onclick="signout();"></input></br>
++		<input value="Signout" type="button" onclick="signout();"></input></br></br>
++
+ 		<b>Chat Contacts</b></br>
+-		<select id="html-contacts" multiple="multiple" ><option value="contacts">Contacts</option></select></br></br>
++		<select id="html-contacts" size="10"><option value="contacts">Contacts</option></select></br>
++		<input value="Open chat channel" type="button" onclick="initiate_chat();"></input></br></br>
+ 
+ 		<div id="html-chat-area">
+ 			<b>Chat Area</b></br>
+ 			<textarea readonly="true" id="html-converation-view" rows="20" ></textarea></br>
+ 			<input type="text" id="html-chat-box" />
+-			<input type="button" value="Send" id="html-send-button" />
++			<input type="button" value="Send" id="html-send-button" onclick="send_chat_message();" />
+ 		</div>
+-
+ 	</body>
+ </html>
+diff --git a/chrome/browser/resources/arattai.js b/chrome/browser/resources/arattai.js
+index eee2d0b..076279e 100644
+--- a/chrome/browser/resources/arattai.js
++++ b/chrome/browser/resources/arattai.js
+@@ -31,3 +31,19 @@ function refresh_contacts () {
+ function signout () {
+ 	chrome.send('arattaiSignout');
+ };
++
++function initiate_chat () {
++	var lbox = document.getElementById("html-contacts");
++	var name = lbox.options[lbox.selectedIndex].text;
++	// TODO: We should send the identifier from telepathy
++	// and not the alias alone. For the time being,
++	// I will consider all aliases are unique, but 
++	// this needs to be fixed before final version.
++	chrome.send('openChatChannel', [name]);
++};
++
++function send_chat_message () {
++	var chatbox = document.getElementById("html-chat-box");
++	var content = chatbox.value;
++	chrome.send('sendChatMessage', [content]);
++};
+diff --git a/chrome/browser/ui/webui/arattai_contact.cc b/chrome/browser/ui/webui/arattai_contact.cc
+index 2ad4aaf..77ea435 100644
+--- a/chrome/browser/ui/webui/arattai_contact.cc
++++ b/chrome/browser/ui/webui/arattai_contact.cc
+@@ -18,3 +18,8 @@ string ArattaiContact::GetAlias ()
+ {
+   return alias;
+ }
++
++string ArattaiContact::GetIdentifier ()
++{
++  return identifier;
++}
+diff --git a/chrome/browser/ui/webui/arattai_contact.h b/chrome/browser/ui/webui/arattai_contact.h
+index 1952304..90d55ef 100644
+--- a/chrome/browser/ui/webui/arattai_contact.h
++++ b/chrome/browser/ui/webui/arattai_contact.h
+@@ -12,6 +12,7 @@ class ArattaiContact
+   ArattaiContact (std::string identifier, std::string alias);
+   void PrintContact ();
+   std::string GetAlias ();
++  std::string GetIdentifier ();
+ };
+ 
+ #endif // CHROME_ARATTAI_CONTACT_H_
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bean.cc b/chrome/browser/ui/webui/arattai_telepathy_bean.cc
+index 5011bc8..02e90ed 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bean.cc
++++ b/chrome/browser/ui/webui/arattai_telepathy_bean.cc
+@@ -41,7 +41,7 @@ vector <const base::Value *> * ArattaiTelepathyBean::GetArattaiContacts ()
+   buddies = new vector <const base::Value *>;
+   buddies->reserve (contacts.size());
+   for (int i=0; i<contacts.size(); i++) {
+-    buddies->push_back (new base::StringValue (((ArattaiContact *) contacts[i])->GetAlias ()));
++    buddies->push_back (new base::StringValue (((ArattaiContact *) contacts[i])->GetIdentifier ()));
+   }
+ 
+   return buddies;
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bridge.cc b/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
+index b216401..d9a6d7f 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
++++ b/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
+@@ -142,6 +142,95 @@ void TelepathyBridge::conn_ready (TpConnection *conn,
+   }
+ }
+ 
++void TelepathyBridge::SendChat (const char *message)
++{
++  TpMessage *msg;
++
++  msg = tp_client_message_new_text (TP_CHANNEL_TEXT_MESSAGE_TYPE_NORMAL,
++                                    message);
++
++  tp_text_channel_send_message_async (chat_channel, msg, TP_MESSAGE_SENDING_FLAG_REPORT_DELIVERY, NULL, NULL);
++
++  g_object_unref (msg);
++}
++
++
++void TelepathyBridge::chat_channel_ready (TpChannel  *channel,
++                                          const GError *in_error,
++                                          gpointer   user_data)
++{
++  cout << "chat_channel_ready " << endl;
++  ArattaiTelepathyBean *bean= (ArattaiTelepathyBean *) user_data;
++  GError *error = NULL;
++
++  handle_error (in_error);
++
++  cout << "Channel type is : " << tp_channel_get_channel_type (channel) << endl;
++
++  TpTextChannel *text;
++  text = (TpTextChannel *) channel;
++  chat_channel = text;
++  TpMessage *msg;
++
++  msg = tp_client_message_new_text (TP_CHANNEL_TEXT_MESSAGE_TYPE_NORMAL,
++                                    "Chat channel opened");
++
++  tp_text_channel_send_message_async (text, msg, TP_MESSAGE_SENDING_FLAG_REPORT_DELIVERY, NULL, NULL);
++
++  g_object_unref (msg);
++
++}
++
++
++void TelepathyBridge::open_chat_channel_cb (TpConnection *conn,
++                                            gboolean  yours,
++                                            const char *object_path,
++                                            GHashTable *properties,
++                                            const GError *in_error,
++                                            gpointer  user_data,
++                                            GObject  *weak_obj)
++{
++  cout << "open_chat_channel_cb" << endl;
++  ArattaiTelepathyBean *bean= (ArattaiTelepathyBean *) user_data;
++  GError *error = NULL;
++
++  handle_error (in_error);
++
++  TpChannel *channel = (TpChannel *) tp_text_channel_new (conn, object_path,
++                                            properties, &error);
++  handle_error (error);
++
++  tp_channel_call_when_ready (channel, chat_channel_ready, bean);
++}
++
++void TelepathyBridge::OpenChatChannel (ArattaiTelepathyBean *bean, 
++                                         std::string target_id)
++{
++  cout << "TelepathyBridge::OpenChatChannel called with target_id " << target_id << endl;
++  GHashTable *props;
++
++  props = tp_asv_new (
++      TP_PROP_CHANNEL_CHANNEL_TYPE, 
++      G_TYPE_STRING, 
++      TP_IFACE_CHANNEL_TYPE_TEXT,
++      
++      TP_PROP_CHANNEL_TARGET_HANDLE_TYPE, 
++      G_TYPE_UINT,
++      TP_HANDLE_TYPE_CONTACT,
++      
++      TP_PROP_CHANNEL_TARGET_ID, 
++      G_TYPE_STRING, 
++      (gchar *) target_id.c_str(),
++      
++      NULL);
++
++  tp_cli_connection_interface_requests_call_ensure_channel (
++        conn, -1, props,
++        open_chat_channel_cb,
++        bean, NULL, NULL);
++  g_hash_table_destroy (props);
++} 
++
+ void TelepathyBridge::status_changed_cb (TpConnection *conn,
+                                           guint  status,
+                                           guint  reason,
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bridge.h b/chrome/browser/ui/webui/arattai_telepathy_bridge.h
+index 9431105..1d162b3 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bridge.h
++++ b/chrome/browser/ui/webui/arattai_telepathy_bridge.h
+@@ -16,6 +16,11 @@ static TpDBusDaemon *bus_daemon;
+ static TpConnection *conn;
+ static GMainLoop *loop;
+ 
++// TODO: This will have to be part of TelepathyBean and
++// there should be a TpTextChannel per online contact.
++// This is a HACK as of now to have a workable prototype.
++static TpTextChannel *chat_channel;
++
+ /* This can be converted into a generic TelepathyBridge in future, if needed.
+  * As of now, this is just a xmpp bridge. 
+  */
+@@ -84,13 +89,27 @@ class TelepathyBridge
+ 
+   static void interrupt_cb (int signal);
+ 
++  static void chat_channel_ready (TpChannel  *channel,
++                           const GError *in_error,
++                           gpointer   user_data);
++
++  static void open_chat_channel_cb (TpConnection *conn,
++                             gboolean  yours,
++                             const char *object_path,
++                             GHashTable *properties,
++                             const GError *in_error,
++                             gpointer  user_data,
++                             GObject  *weak_obj);
+  public:
+ 
+   static void Initialize (ArattaiTelepathyBean *bean);
+ 
+-  static void Initialize_chat (ArattaiTelepathyBean *bean, char *contact_name);
+-
+   static void Shutdown (ArattaiTelepathyBean *bean);
++  
++  static void OpenChatChannel (ArattaiTelepathyBean *bean, 
++                        std::string target_id);
++
++  static void SendChat (const char *message);
+ };
+ 
+ #endif // CHROME_ARATTAI_TELEPATHY_BRIDGE_H_
+diff --git a/chrome/browser/ui/webui/arattai_ui.cc b/chrome/browser/ui/webui/arattai_ui.cc
+index c75edcb..1ed29bb 100644
+--- a/chrome/browser/ui/webui/arattai_ui.cc
++++ b/chrome/browser/ui/webui/arattai_ui.cc
+@@ -42,6 +42,60 @@ void ArattaiHandler::RegisterMessages() {
+  web_ui_->RegisterMessageCallback("arattaiSignout",
+       (WebUI::MessageCallback *) NewCallback(this,
+           &ArattaiHandler::Signout));
++
++ web_ui_->RegisterMessageCallback("openChatChannel",
++      (WebUI::MessageCallback *) NewCallback(this,
++          &ArattaiHandler::OpenChatChannel));
++
++ web_ui_->RegisterMessageCallback("sendChatMessage",
++      (WebUI::MessageCallback *) NewCallback(this,
++          &ArattaiHandler::SendChatMessage));
++}
++
++void ArattaiHandler::SendChatMessage (const ListValue* args) {
++
++  cout << "SendChatMessage in ArattaiHandler called" << endl;
++
++  for (ListValue::const_iterator v = args->begin();
++       v != args->end(); ++v) {
++    if ((*v)->GetType() != Value::TYPE_STRING) {
++      cout << "Not a string type" << endl;
++      continue;
++    }
++    const StringValue* string_value = static_cast<const StringValue*>(*v);
++    std::string chat_message;
++    if (!string_value->GetAsString(&chat_message)) {
++      cout << "God should help get the right string" << endl;
++      continue;
++    }
++
++    cout << "Chat Message sent as : " << chat_message << endl;
++
++    TelepathyBridge::SendChat (chat_message.c_str());
++  }
++}
++
++void ArattaiHandler::OpenChatChannel (const ListValue* args) {
++
++  cout << "OpenChatChannel in ArattaiHandler called" << endl;
++
++  for (ListValue::const_iterator v = args->begin();
++       v != args->end(); ++v) {
++    if ((*v)->GetType() != Value::TYPE_STRING) {
++      cout << "Not a string type" << endl;
++      continue;
++    }
++    const StringValue* string_value = static_cast<const StringValue*>(*v);
++    std::string contact_id;
++    if (!string_value->GetAsString(&contact_id)) {
++      cout << "God should help get the right string" << endl;
++      continue;
++    }
++
++    cout << "Chat Open request for " << contact_id << endl;
++
++    TelepathyBridge::OpenChatChannel (bean, contact_id);
++  }
+ }
+ 
+ void ArattaiHandler::Signout() {
+diff --git a/chrome/browser/ui/webui/arattai_ui.h b/chrome/browser/ui/webui/arattai_ui.h
+index 108dc41..043ddbf 100644
+--- a/chrome/browser/ui/webui/arattai_ui.h
++++ b/chrome/browser/ui/webui/arattai_ui.h
+@@ -22,6 +22,9 @@ class ArattaiHandler : public WebUIMessageHandler {
+   void ListChatContacts ();
+ 
+   void Signout();
++
++  void OpenChatChannel (const ListValue* args);
++  void SendChatMessage (const ListValue* args);
+ };
+ 
+ #endif  // CHROME_BROWSER_UI_ArattaiUI_H_
+-- 
+1.7.3.4
+

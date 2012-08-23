@@ -1,0 +1,88 @@
+From 5f7db0c57fd8376f294ec2ce9ac2a44a4a28368d Mon Sep 17 00:00:00 2001
+From: Sankar P <sankar.curiosity@gmail.com>
+Date: Mon, 3 Oct 2011 02:23:14 +0530
+Subject: [PATCH 10/11] HTML/Javascript to hide/show divisions based on events
+
+---
+ chrome/browser/resources/arattai.html |   17 ++++++++++++++---
+ chrome/browser/resources/arattai.js   |   15 +++++++++------
+ 2 files changed, 23 insertions(+), 9 deletions(-)
+
+diff --git a/chrome/browser/resources/arattai.html b/chrome/browser/resources/arattai.html
+index 0d63183..495ecfa 100644
+--- a/chrome/browser/resources/arattai.html
++++ b/chrome/browser/resources/arattai.html
+@@ -9,9 +9,15 @@
+ 		<input value="Signin & Refresh Contacts" type="button" onclick="refresh_contacts();"></input>
+ 		<input value="Signout" type="button" onclick="signout();"></input></br></br>
+ 
+-		<b>Chat Contacts</b></br>
+-		<select id="html-contacts" size="10"><option value="contacts">Contacts</option></select></br>
+-		<input value="Open chat channel" type="button" onclick="initiate_chat();"></input></br></br>
++		<div id="contacts-list-area">
++			<b>Chat Contacts</b></br>
++			<select id="html-contacts" size="10"><option value="contacts">Contacts</option></select></br>
++			<input value="Open chat channel" type="button" onclick="initiate_chat();"></input></br></br>
++		</div>
++		<script>
++			var thearea = document.getElementById('contacts-list-area');
++			thearea.style.display = "none";
++		</script>
+ 
+ 		<div id="html-chat-area">
+ 			<b>Chat Area</b></br>
+@@ -19,5 +25,10 @@
+ 			<input type="text" id="html-chat-box" />
+ 			<input type="button" value="Send" id="html-send-button" onclick="send_chat_message();" />
+ 		</div>
++		<script>
++			var thearea = document.getElementById('html-chat-area');
++			thearea.style.display = "none";
++		</script>
++
+ 	</body>
+ </html>
+diff --git a/chrome/browser/resources/arattai.js b/chrome/browser/resources/arattai.js
+index 076279e..2a58c05 100644
+--- a/chrome/browser/resources/arattai.js
++++ b/chrome/browser/resources/arattai.js
+@@ -1,9 +1,3 @@
+-function initiate_chat (contact)
+-{
+-	alert (contact);
+-};
+-
+-
+ function add_contact (contact)
+ {
+ 	// Create an Option object        
+@@ -26,10 +20,16 @@ function arattai_add_contact () {
+ 
+ function refresh_contacts () {
+ 	chrome.send('listChatContacts');
++	var thearea = document.getElementById('contacts-list-area');
++	thearea.style.display = "block";
+ };
+ 
+ function signout () {
+ 	chrome.send('arattaiSignout');
++	var thearea = document.getElementById('contacts-list-area');
++	thearea.style.display = "none";
++	thearea = document.getElementById('html-chat-area');
++	thearea.style.display = "none";
+ };
+ 
+ function initiate_chat () {
+@@ -40,6 +40,9 @@ function initiate_chat () {
+ 	// I will consider all aliases are unique, but 
+ 	// this needs to be fixed before final version.
+ 	chrome.send('openChatChannel', [name]);
++
++	thearea = document.getElementById('html-chat-area');
++	thearea.style.display = "block";
+ };
+ 
+ function send_chat_message () {
+-- 
+1.7.3.4
+

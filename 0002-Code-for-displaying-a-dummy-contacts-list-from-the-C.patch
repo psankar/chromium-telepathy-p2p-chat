@@ -1,0 +1,158 @@
+From e68ceb89410348aed071b891dbc484f406d35e60 Mon Sep 17 00:00:00 2001
+From: Sankar P <sankar.curiosity@gmail.com>
+Date: Thu, 22 Sep 2011 23:39:38 +0530
+Subject: [PATCH 02/11] Code for displaying a (dummy) contacts list from the CC program to the HTML+JS Renderer.
+
+---
+ chrome/browser/browser_resources.grd  |    1 +
+ chrome/browser/resources/arattai.html |   18 ++++++++++++--
+ chrome/browser/resources/arattai.js   |   16 +++++++++++++
+ chrome/browser/ui/webui/arattai_ui.cc |   39 +++++++++++++++++++++++++++++++++
+ chrome/browser/ui/webui/arattai_ui.h  |    9 +++++++
+ 5 files changed, 80 insertions(+), 3 deletions(-)
+ create mode 100644 chrome/browser/resources/arattai.js
+
+diff --git a/chrome/browser/browser_resources.grd b/chrome/browser/browser_resources.grd
+index aec52c2..1c6512c 100644
+--- a/chrome/browser/browser_resources.grd
++++ b/chrome/browser/browser_resources.grd
+@@ -118,6 +118,7 @@
+       <include name="IDR_WEBSTORE_MANIFEST" file="resources\webstore_app\manifest.json" type="BINDATA" />
+       <include name="IDR_CLOUDPRINT_MANIFEST" file="resources\cloud_print_app\manifest.json" type="BINDATA" />
+       <include name="IDR_ARATTAI_HTML" file="resources\arattai.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
++      <include name="IDR_ARATTAI_JS" file="resources\arattai.js" type="BINDATA" />
+       <if expr="pp_ifdef('chromeos')">
+         <include name="IDR_ABOUT_SYS_HTML" file="resources\about_sys.html" flattenhtml="true" type="BINDATA" />
+         <include name="IDR_ACTIVE_DOWNLOADS_HTML" file="resources\active_downloads.html" flattenhtml="true" type="BINDATA" />
+diff --git a/chrome/browser/resources/arattai.html b/chrome/browser/resources/arattai.html
+index ed105a8..9873cfc 100644
+--- a/chrome/browser/resources/arattai.html
++++ b/chrome/browser/resources/arattai.html
+@@ -1,5 +1,17 @@
+ <html>
+-	<body>
+-Hello World
+-	</body>
++<script src="chrome://arattai/arattai.js"></script>
++
++<script>
++function refresh_contacts () {
++	var foo = document.getElementById("contacts-div");
++	foo.innerHTML = "";
++	chrome.send('listChatContacts');
++}
++</script>
++
++<body>
++	<b>Arattai/Chat:</b></br>
++<input value="Refresh Contacts" type="button" onclick="refresh_contacts();"></input>
++<ul><div id="contacts-div"></div></ul>
++</body>
+ </html>
+diff --git a/chrome/browser/resources/arattai.js b/chrome/browser/resources/arattai.js
+new file mode 100644
+index 0000000..a28e497
+--- /dev/null
++++ b/chrome/browser/resources/arattai.js
+@@ -0,0 +1,16 @@
++function $(o) {return document.getElementById(o);}
++
++function arattai_add_contact (contact) {
++
++	var spanTag = document.createElement("span"); 
++        spanTag.id = "arattai-contact-" + contact; 
++        spanTag.className ="dynamicSpan"; 
++        spanTag.innerHTML = "<li>" + contact + "</li>"; 
++        document.body.appendChild(spanTag); 
++        
++        var foo = document.getElementById("contacts-div");
++        
++        foo.appendChild(spanTag);
++}
++
++
+diff --git a/chrome/browser/ui/webui/arattai_ui.cc b/chrome/browser/ui/webui/arattai_ui.cc
+index 5d56287..b13f06d 100644
+--- a/chrome/browser/ui/webui/arattai_ui.cc
++++ b/chrome/browser/ui/webui/arattai_ui.cc
+@@ -2,6 +2,7 @@
+ 
+ using namespace std;
+ 
++#include "base/values.h"
+ #include "chrome/browser/ui/webui/arattai_ui.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "content/browser/tab_contents/tab_contents.h"
+@@ -18,13 +19,51 @@ ChromeWebUIDataSource *CreateArattaiUIHTMLSource() {
+       new ChromeWebUIDataSource(chrome::kChromeUIArattaiHost);
+ 
+   source->set_default_resource(IDR_ARATTAI_HTML);
++  source->add_resource_path("arattai.js", IDR_ARATTAI_JS);
+ 
+   return source;
+ }
+ 
+ } //namespace
+ 
++
++WebUIMessageHandler* ArattaiHandler::Attach(WebUI* web_ui) {
++ return WebUIMessageHandler::Attach(web_ui);
++}
++
++void ArattaiHandler::RegisterMessages() {
++ web_ui_->RegisterMessageCallback("listChatContacts",
++      (WebUI::MessageCallback *) NewCallback(this,
++          &ArattaiHandler::ListChatContacts));
++}
++
++void ArattaiHandler::ListChatContacts() {
++
++ base::StringValue *contact;
++
++ contact = new base::StringValue ("Dummy Contact 1");
++ web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
++ delete contact;
++
++ contact = new base::StringValue ("Dummy Contact 2");
++ web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
++ delete contact;
++
++ contact = new base::StringValue ("Dummy Contact 3");
++ web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
++ delete contact;
++
++ contact = new base::StringValue ("Dummy Contact 4");
++ web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
++ delete contact;
++
++ contact = new base::StringValue ("Dummy Contact 5");
++ web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
++ delete contact;
++}
++
+ ArattaiUI::ArattaiUI(TabContents* contents) : ChromeWebUI(contents) {
++  AddMessageHandler((new ArattaiHandler())->Attach(this));
+   // Set up the chrome://arattai/ source.
+   Profile* profile = Profile::FromBrowserContext(contents->browser_context());
+   profile->GetChromeURLDataManager()->AddDataSource(
+diff --git a/chrome/browser/ui/webui/arattai_ui.h b/chrome/browser/ui/webui/arattai_ui.h
+index 19c9e45..a19f7f6 100644
+--- a/chrome/browser/ui/webui/arattai_ui.h
++++ b/chrome/browser/ui/webui/arattai_ui.h
+@@ -10,4 +10,13 @@ class ArattaiUI : public ChromeWebUI {
+ 
+ };
+ 
++class ArattaiHandler : public WebUIMessageHandler {
++ public:
++  virtual WebUIMessageHandler* Attach(WebUI* web_ui) OVERRIDE;
++  virtual void RegisterMessages();
++
++  // Callback for the "listChatContacts" message
++  void ListChatContacts ();
++};
++
+ #endif  // CHROME_BROWSER_UI_ArattaiUI_H_
+-- 
+1.7.3.4
+

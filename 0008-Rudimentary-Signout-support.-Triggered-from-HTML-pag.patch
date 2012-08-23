@@ -1,0 +1,165 @@
+From ae2734f4e7d3c767d7d5f7c51b275f32e98bbbd8 Mon Sep 17 00:00:00 2001
+From: Sankar P <sankar.curiosity@gmail.com>
+Date: Sat, 1 Oct 2011 18:47:58 +0530
+Subject: [PATCH 08/11] Rudimentary Signout support. Triggered from HTML page. HTML UI Changes
+
+---
+ chrome/browser/resources/arattai.html |   25 ++++++++++++++++++-----
+ chrome/browser/resources/arattai.js   |   34 ++++++++++++++++++++++----------
+ chrome/browser/ui/webui/arattai_ui.cc |   11 +++++++--
+ chrome/browser/ui/webui/arattai_ui.h  |    5 ++++
+ 4 files changed, 55 insertions(+), 20 deletions(-)
+
+diff --git a/chrome/browser/resources/arattai.html b/chrome/browser/resources/arattai.html
+index 127c9f7..8d62b19 100644
+--- a/chrome/browser/resources/arattai.html
++++ b/chrome/browser/resources/arattai.html
+@@ -1,9 +1,22 @@
+ <html>
+-<script src="chrome://arattai/arattai.js"></script>
++	<script src="chrome://arattai/arattai.js"></script>
++	<head>
++		<title>Arattai (Chat)</title>
++	</head>
+ 
+-<body>
+-	<b>Arattai/Chat:</b></br>
+-<input value="Refresh Contacts" type="button" onclick="refresh_contacts();"></input>
+-<ul><div id="contacts-div"></div></ul>
+-</body>
++	<body>
++		<h1> Arattai (Chat) </h1>
++		<input value="Signin & Refresh Contacts" type="button" onclick="refresh_contacts();"></input>
++		<input value="Signout" type="button" onclick="signout();"></input></br>
++		<b>Chat Contacts</b></br>
++		<select id="html-contacts" multiple="multiple" ><option value="contacts">Contacts</option></select></br></br>
++
++		<div id="html-chat-area">
++			<b>Chat Area</b></br>
++			<textarea readonly="true" id="html-converation-view" rows="20" ></textarea></br>
++			<input type="text" id="html-chat-box" />
++			<input type="button" value="Send" id="html-send-button" />
++		</div>
++
++	</body>
+ </html>
+diff --git a/chrome/browser/resources/arattai.js b/chrome/browser/resources/arattai.js
+index 990622b..eee2d0b 100644
+--- a/chrome/browser/resources/arattai.js
++++ b/chrome/browser/resources/arattai.js
+@@ -1,21 +1,33 @@
++function initiate_chat (contact)
++{
++	alert (contact);
++};
++
++
++function add_contact (contact)
++{
++	// Create an Option object        
++	var opt = document.createElement("option");
++
++	// Add an Option object to Drop Down/List Box
++	document.getElementById("html-contacts").options.add(opt);
++	// Assign text and value to Option object
++	opt.text = contact;
++	opt.value = contact;
++};
++
+ function arattai_add_contact () {
+ 	var args = Array.prototype.slice.call(arguments);
+ 	while (args.length > 0) {
+ 		var contact = args.pop();
+-		var spanTag = document.createElement("span"); 
+-		spanTag.id = "arattai-contact-" + contact; 
+-		spanTag.className ="dynamicSpan"; 
+-		spanTag.innerHTML = "<li>" + contact + "</li>"; 
+-		document.body.appendChild(spanTag); 
+-
+-		var foo = document.getElementById("contacts-div");
+-
+-		foo.appendChild(spanTag);
++		add_contact (contact);
+ 	}
+ };
+ 
+ function refresh_contacts () {
+-	var foo = document.getElementById("contacts-div");
+-	foo.innerHTML = "";
+ 	chrome.send('listChatContacts');
+ };
++
++function signout () {
++	chrome.send('arattaiSignout');
++};
+diff --git a/chrome/browser/ui/webui/arattai_ui.cc b/chrome/browser/ui/webui/arattai_ui.cc
+index 8882e7a..c75edcb 100644
+--- a/chrome/browser/ui/webui/arattai_ui.cc
++++ b/chrome/browser/ui/webui/arattai_ui.cc
+@@ -5,7 +5,6 @@ using namespace std;
+ 
+ #include "base/values.h"
+ #include "chrome/browser/ui/webui/arattai_ui.h"
+-#include "chrome/browser/ui/webui/arattai_telepathy_bean.h"
+ #include "chrome/browser/ui/webui/arattai_telepathy_bridge.h"
+ #include "chrome/browser/ui/webui/arattai_contact.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -39,18 +38,24 @@ void ArattaiHandler::RegisterMessages() {
+  web_ui_->RegisterMessageCallback("listChatContacts",
+       (WebUI::MessageCallback *) NewCallback(this,
+           &ArattaiHandler::ListChatContacts));
++
++ web_ui_->RegisterMessageCallback("arattaiSignout",
++      (WebUI::MessageCallback *) NewCallback(this,
++          &ArattaiHandler::Signout));
++}
++
++void ArattaiHandler::Signout() {
++  TelepathyBridge::Shutdown (bean);
+ }
+ 
+ void ArattaiHandler::ListChatContacts() {
+ 
+-  ArattaiTelepathyBean *bean;
+   bean = new ArattaiTelepathyBean ();
+ 
+   TelepathyBridge::Initialize (bean);
+   vector <const base::Value *> * contacts = bean->GetArattaiContacts ();
+ 
+   web_ui_->CallJavascriptFunction("arattai_add_contact", *contacts); 
+-  TelepathyBridge::Shutdown (bean);
+ 
+   /*
+      contact = new base::StringValue ("Dummy Contact 2");
+diff --git a/chrome/browser/ui/webui/arattai_ui.h b/chrome/browser/ui/webui/arattai_ui.h
+index a19f7f6..108dc41 100644
+--- a/chrome/browser/ui/webui/arattai_ui.h
++++ b/chrome/browser/ui/webui/arattai_ui.h
+@@ -3,6 +3,7 @@
+ #pragma once
+ 
+ #include "chrome/browser/ui/webui/chrome_web_ui.h"
++#include "chrome/browser/ui/webui/arattai_telepathy_bean.h"
+ 
+ class ArattaiUI : public ChromeWebUI {
+  public:
+@@ -11,12 +12,16 @@ class ArattaiUI : public ChromeWebUI {
+ };
+ 
+ class ArattaiHandler : public WebUIMessageHandler {
++ private:
++  ArattaiTelepathyBean *bean;
+  public:
+   virtual WebUIMessageHandler* Attach(WebUI* web_ui) OVERRIDE;
+   virtual void RegisterMessages();
+ 
+   // Callback for the "listChatContacts" message
+   void ListChatContacts ();
++
++  void Signout();
+ };
+ 
+ #endif  // CHROME_BROWSER_UI_ArattaiUI_H_
+-- 
+1.7.3.4
+

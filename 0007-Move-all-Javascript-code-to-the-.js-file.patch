@@ -1,0 +1,47 @@
+From 903c4c42d6b0e01a9458940bb44d6d9237383064 Mon Sep 17 00:00:00 2001
+From: Sankar P <sankar.curiosity@gmail.com>
+Date: Sat, 1 Oct 2011 14:48:41 +0530
+Subject: [PATCH 07/11] Move all Javascript code to the .js file
+
+---
+ chrome/browser/resources/arattai.html |    9 ---------
+ chrome/browser/resources/arattai.js   |    6 ++++++
+ 2 files changed, 6 insertions(+), 9 deletions(-)
+
+diff --git a/chrome/browser/resources/arattai.html b/chrome/browser/resources/arattai.html
+index 24918a4..127c9f7 100644
+--- a/chrome/browser/resources/arattai.html
++++ b/chrome/browser/resources/arattai.html
+@@ -1,15 +1,6 @@
+ <html>
+ <script src="chrome://arattai/arattai.js"></script>
+ 
+-<script>
+-function refresh_contacts () {
+-	var foo = document.getElementById("contacts-div");
+-	foo.innerHTML = "";
+-	chrome.send('listChatContacts');
+-}
+-
+-</script>
+-
+ <body>
+ 	<b>Arattai/Chat:</b></br>
+ <input value="Refresh Contacts" type="button" onclick="refresh_contacts();"></input>
+diff --git a/chrome/browser/resources/arattai.js b/chrome/browser/resources/arattai.js
+index 0a0cf0d..990622b 100644
+--- a/chrome/browser/resources/arattai.js
++++ b/chrome/browser/resources/arattai.js
+@@ -13,3 +13,9 @@ function arattai_add_contact () {
+ 		foo.appendChild(spanTag);
+ 	}
+ };
++
++function refresh_contacts () {
++	var foo = document.getElementById("contacts-div");
++	foo.innerHTML = "";
++	chrome.send('listChatContacts');
++};
+-- 
+1.7.3.4
+

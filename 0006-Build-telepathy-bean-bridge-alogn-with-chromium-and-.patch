@@ -1,0 +1,305 @@
+From e20a063540ad60d0dff9327bc18b1b544a49f635 Mon Sep 17 00:00:00 2001
+From: Sankar P <sankar.curiosity@gmail.com>
+Date: Sat, 1 Oct 2011 00:07:59 +0530
+Subject: [PATCH 06/11] Build telepathy bean/bridge alogn with chromium and display the contacts obtained via tp-bridge in the webpage.
+
+---
+ build/linux/system.gyp                             |   17 ++++++++
+ chrome/browser/browser_resources.grd               |    2 +-
+ chrome/browser/resources/arattai.html              |    1 +
+ chrome/browser/resources/arattai.js                |   31 +++++++--------
+ chrome/browser/ui/webui/arattai_contact.h          |    5 ++
+ chrome/browser/ui/webui/arattai_telepathy_bean.cc  |   11 +++--
+ chrome/browser/ui/webui/arattai_telepathy_bean.h   |    9 ++++-
+ .../browser/ui/webui/arattai_telepathy_bridge.cc   |    3 +-
+ chrome/browser/ui/webui/arattai_telepathy_bridge.h |    5 ++
+ chrome/browser/ui/webui/arattai_ui.cc              |   41 ++++++++++++--------
+ chrome/chrome_browser.gypi                         |    7 +++
+ 11 files changed, 92 insertions(+), 40 deletions(-)
+
+diff --git a/build/linux/system.gyp b/build/linux/system.gyp
+index 41cb824..7282d5e 100644
+--- a/build/linux/system.gyp
++++ b/build/linux/system.gyp
+@@ -443,6 +443,23 @@
+       },
+     },
+     {
++      'target_name': 'telepathy-glib',
++      'type': 'settings',
++      'direct_dependent_settings': {
++        'cflags': [
++          '<!@(<(pkg-config) --cflags telepathy-glib)',
++        ],
++      },
++      'link_settings': {
++        'ldflags': [
++          '<!@(<(pkg-config) --libs-only-L --libs-only-other telepathy-glib)',
++        ],
++        'libraries': [
++          '<!@(<(pkg-config) --libs-only-l telepathy-glib)',
++        ],
++      },
++    },
++    {
+       'target_name': 'libresolv',
+       'type': 'settings',
+       'link_settings': {
+diff --git a/chrome/browser/browser_resources.grd b/chrome/browser/browser_resources.grd
+index 1c6512c..0555894 100644
+--- a/chrome/browser/browser_resources.grd
++++ b/chrome/browser/browser_resources.grd
+@@ -118,7 +118,7 @@
+       <include name="IDR_WEBSTORE_MANIFEST" file="resources\webstore_app\manifest.json" type="BINDATA" />
+       <include name="IDR_CLOUDPRINT_MANIFEST" file="resources\cloud_print_app\manifest.json" type="BINDATA" />
+       <include name="IDR_ARATTAI_HTML" file="resources\arattai.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
+-      <include name="IDR_ARATTAI_JS" file="resources\arattai.js" type="BINDATA" />
++      <include name="IDR_ARATTAI_JS" file="resources\arattai.js" flattenhtml="true" type="BINDATA" />
+       <if expr="pp_ifdef('chromeos')">
+         <include name="IDR_ABOUT_SYS_HTML" file="resources\about_sys.html" flattenhtml="true" type="BINDATA" />
+         <include name="IDR_ACTIVE_DOWNLOADS_HTML" file="resources\active_downloads.html" flattenhtml="true" type="BINDATA" />
+diff --git a/chrome/browser/resources/arattai.html b/chrome/browser/resources/arattai.html
+index 9873cfc..24918a4 100644
+--- a/chrome/browser/resources/arattai.html
++++ b/chrome/browser/resources/arattai.html
+@@ -7,6 +7,7 @@ function refresh_contacts () {
+ 	foo.innerHTML = "";
+ 	chrome.send('listChatContacts');
+ }
++
+ </script>
+ 
+ <body>
+diff --git a/chrome/browser/resources/arattai.js b/chrome/browser/resources/arattai.js
+index a28e497..0a0cf0d 100644
+--- a/chrome/browser/resources/arattai.js
++++ b/chrome/browser/resources/arattai.js
+@@ -1,16 +1,15 @@
+-function $(o) {return document.getElementById(o);}
+-
+-function arattai_add_contact (contact) {
+-
+-	var spanTag = document.createElement("span"); 
+-        spanTag.id = "arattai-contact-" + contact; 
+-        spanTag.className ="dynamicSpan"; 
+-        spanTag.innerHTML = "<li>" + contact + "</li>"; 
+-        document.body.appendChild(spanTag); 
+-        
+-        var foo = document.getElementById("contacts-div");
+-        
+-        foo.appendChild(spanTag);
+-}
+-
+-
++function arattai_add_contact () {
++	var args = Array.prototype.slice.call(arguments);
++	while (args.length > 0) {
++		var contact = args.pop();
++		var spanTag = document.createElement("span"); 
++		spanTag.id = "arattai-contact-" + contact; 
++		spanTag.className ="dynamicSpan"; 
++		spanTag.innerHTML = "<li>" + contact + "</li>"; 
++		document.body.appendChild(spanTag); 
++
++		var foo = document.getElementById("contacts-div");
++
++		foo.appendChild(spanTag);
++	}
++};
+diff --git a/chrome/browser/ui/webui/arattai_contact.h b/chrome/browser/ui/webui/arattai_contact.h
+index 88d8f6c..1952304 100644
+--- a/chrome/browser/ui/webui/arattai_contact.h
++++ b/chrome/browser/ui/webui/arattai_contact.h
+@@ -1,3 +1,6 @@
++#ifndef CHROME_ARATTAI_CONTACT_H_
++#define CHROME_ARATTAI_CONTACT_H_
++
+ #include <string>
+ 
+ class ArattaiContact
+@@ -10,3 +13,5 @@ class ArattaiContact
+   void PrintContact ();
+   std::string GetAlias ();
+ };
++
++#endif // CHROME_ARATTAI_CONTACT_H_
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bean.cc b/chrome/browser/ui/webui/arattai_telepathy_bean.cc
+index 2629a77..5011bc8 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bean.cc
++++ b/chrome/browser/ui/webui/arattai_telepathy_bean.cc
+@@ -34,13 +34,14 @@ void ArattaiTelepathyBean::PrintArattaiContacts ()
+   }
+ }
+ 
+-string * ArattaiTelepathyBean::GetArattaiContacts ()
++vector <const base::Value *> * ArattaiTelepathyBean::GetArattaiContacts ()
+ {
+-  string *buddies;
+-  buddies = new string[contacts.size()];
++  vector <const base::Value *> *buddies;
++
++  buddies = new vector <const base::Value *>;
++  buddies->reserve (contacts.size());
+   for (int i=0; i<contacts.size(); i++) {
+-    //Copy the vector to the string
+-    buddies[i] = ((ArattaiContact *) contacts[i])->GetAlias ();
++    buddies->push_back (new base::StringValue (((ArattaiContact *) contacts[i])->GetAlias ()));
+   }
+ 
+   return buddies;
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bean.h b/chrome/browser/ui/webui/arattai_telepathy_bean.h
+index 8dc5a0c..ce4a777 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bean.h
++++ b/chrome/browser/ui/webui/arattai_telepathy_bean.h
+@@ -1,5 +1,10 @@
++#ifndef CHROME_ARATTAI_TELEPATHY_BEAN_H_
++#define CHROME_ARATTAI_TELEPATHY_BEAN_H_
++
+ #include "arattai_contact.h"
+ 
++#include "base/values.h"
++
+ #include <string>
+ #include <vector>
+ 
+@@ -17,7 +22,9 @@ class ArattaiTelepathyBean
+ 
+   void AddArattaiContact (std::string id, std::string al);
+   void PrintArattaiContacts ();
+-  std::string * GetArattaiContacts ();
++  std::vector <const base::Value *> * GetArattaiContacts ();
+ 
+   int locked;
+ };
++
++#endif // CHROME_ARATTAI_TELEPATHY_BEAN_H_
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bridge.cc b/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
+index b23ca88..b216401 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
++++ b/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
+@@ -256,6 +256,7 @@ void TelepathyBridge::Shutdown (ArattaiTelepathyBean *bean)
+   delete bean;
+ }
+ 
++/*
+ int main()
+ {
+   ArattaiTelepathyBean *bean;
+@@ -265,4 +266,4 @@ int main()
+   TelepathyBridge::Shutdown (bean);
+ 
+   return 0;
+-}
++}*/
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bridge.h b/chrome/browser/ui/webui/arattai_telepathy_bridge.h
+index 1e5f8d0..9431105 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bridge.h
++++ b/chrome/browser/ui/webui/arattai_telepathy_bridge.h
+@@ -1,3 +1,6 @@
++#ifndef CHROME_ARATTAI_TELEPATHY_BRIDGE_H_
++#define CHROME_ARATTAI_TELEPATHY_BRIDGE_H_
++
+ #include <unistd.h>
+ #include <string.h>
+ 
+@@ -89,3 +92,5 @@ class TelepathyBridge
+ 
+   static void Shutdown (ArattaiTelepathyBean *bean);
+ };
++
++#endif // CHROME_ARATTAI_TELEPATHY_BRIDGE_H_
+diff --git a/chrome/browser/ui/webui/arattai_ui.cc b/chrome/browser/ui/webui/arattai_ui.cc
+index b13f06d..8882e7a 100644
+--- a/chrome/browser/ui/webui/arattai_ui.cc
++++ b/chrome/browser/ui/webui/arattai_ui.cc
+@@ -1,9 +1,13 @@
+ #include <iostream>
++#include <vector>
+ 
+ using namespace std;
+ 
+ #include "base/values.h"
+ #include "chrome/browser/ui/webui/arattai_ui.h"
++#include "chrome/browser/ui/webui/arattai_telepathy_bean.h"
++#include "chrome/browser/ui/webui/arattai_telepathy_bridge.h"
++#include "chrome/browser/ui/webui/arattai_contact.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "content/browser/tab_contents/tab_contents.h"
+ #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
+@@ -39,27 +43,32 @@ void ArattaiHandler::RegisterMessages() {
+ 
+ void ArattaiHandler::ListChatContacts() {
+ 
+- base::StringValue *contact;
++  ArattaiTelepathyBean *bean;
++  bean = new ArattaiTelepathyBean ();
+ 
+- contact = new base::StringValue ("Dummy Contact 1");
+- web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
+- delete contact;
++  TelepathyBridge::Initialize (bean);
++  vector <const base::Value *> * contacts = bean->GetArattaiContacts ();
+ 
+- contact = new base::StringValue ("Dummy Contact 2");
+- web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
+- delete contact;
++  web_ui_->CallJavascriptFunction("arattai_add_contact", *contacts); 
++  TelepathyBridge::Shutdown (bean);
+ 
+- contact = new base::StringValue ("Dummy Contact 3");
+- web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
+- delete contact;
++  /*
++     contact = new base::StringValue ("Dummy Contact 2");
++     web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
++     delete contact;
+ 
+- contact = new base::StringValue ("Dummy Contact 4");
+- web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
+- delete contact;
++     contact = new base::StringValue ("Dummy Contact 3");
++     web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
++     delete contact;
+ 
+- contact = new base::StringValue ("Dummy Contact 5");
+- web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
+- delete contact;
++     contact = new base::StringValue ("Dummy Contact 4");
++     web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
++     delete contact;
++
++     contact = new base::StringValue ("Dummy Contact 5");
++     web_ui_->CallJavascriptFunction("arattai_add_contact", *contact);
++     delete contact;
++     */
+ }
+ 
+ ArattaiUI::ArattaiUI(TabContents* contents) : ChromeWebUI(contents) {
+diff --git a/chrome/chrome_browser.gypi b/chrome/chrome_browser.gypi
+index 5ee63ee..317befd 100644
+--- a/chrome/chrome_browser.gypi
++++ b/chrome/chrome_browser.gypi
+@@ -3495,6 +3495,12 @@
+         'browser/ui/web_applications/web_app_ui.h',
+         'browser/ui/webui/active_downloads_ui.cc',
+         'browser/ui/webui/active_downloads_ui.h',
++	'browser/ui/webui/arattai_contact.cc',
++	'browser/ui/webui/arattai_contact.h',
++	'browser/ui/webui/arattai_telepathy_bean.cc',
++	'browser/ui/webui/arattai_telepathy_bean.h',
++	'browser/ui/webui/arattai_telepathy_bridge.cc',
++	'browser/ui/webui/arattai_telepathy_bridge.h',
+ 	'browser/ui/webui/arattai_ui.cc',
+ 	'browser/ui/webui/arattai_ui.h',
+         'browser/ui/webui/bookmarks_ui.cc',
+@@ -4120,6 +4126,7 @@
+         ['toolkit_uses_gtk == 1', {
+           'dependencies': [
+             '../build/linux/system.gyp:dbus-glib',
++            '../build/linux/system.gyp:telepathy-glib',
+             '../build/linux/system.gyp:gconf',
+             '../build/linux/system.gyp:gtk',
+             '../build/linux/system.gyp:gtkprint',
+-- 
+1.7.3.4
+

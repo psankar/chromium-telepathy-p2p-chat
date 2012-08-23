@@ -1,0 +1,67 @@
+From 0953639b6ea295cf5c6639f1e216c3c8f3a6a087 Mon Sep 17 00:00:00 2001
+From: Sankar P <sankar.curiosity@gmail.com>
+Date: Thu, 29 Sep 2011 23:06:10 +0530
+Subject: [PATCH 04/11] Implement Shutdown API for the TelepathyBridge
+
+---
+ .../browser/ui/webui/arattai_telepathy_bridge.cc   |   16 ++++++++++++----
+ 1 files changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/arattai_telepathy_bridge.cc b/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
+index 1f56dc0..b23ca88 100644
+--- a/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
++++ b/chrome/browser/ui/webui/arattai_telepathy_bridge.cc
+@@ -23,7 +23,9 @@ void TelepathyBridge::group_members_changed_cb (TpChannel  *channel,
+                                                  guint    reason,
+                                                  char **user_data)
+ {
++  ArattaiTelepathyBean *bean= (ArattaiTelepathyBean *) user_data;
+   cout << "Members changed. Should update the view." << endl;
++  bean->locked = 2;
+   /* TODO: Remember to use the bean->locked variable when you are implementing this */
+ }
+ 
+@@ -50,7 +52,7 @@ void TelepathyBridge::handle_to_contact (TpConnection *connection,
+ 
+   /* print part */
+   bean->PrintArattaiContacts();
+-  bean->locked = 0;
++  g_main_loop_quit (loop);
+ 
+ }
+ 
+@@ -211,6 +213,7 @@ void TelepathyBridge::cm_ready (TpConnectionManager *cm,
+ 
+ void TelepathyBridge::interrupt_cb (int signal)
+ {
++  cout << "interrupt_cb called" << endl;
+   /* disconnect */
+   tp_cli_connection_call_disconnect (conn, -1, NULL, NULL, NULL, NULL);
+   g_main_loop_quit (loop);
+@@ -246,15 +249,20 @@ void TelepathyBridge::Initialize (ArattaiTelepathyBean *bean)
+   g_object_unref (bus_daemon);
+ }
+ 
++void TelepathyBridge::Shutdown (ArattaiTelepathyBean *bean)
++{
++  cout << "Shutdown function is called " << endl;
++  tp_cli_connection_call_disconnect (conn, -1, NULL, NULL, NULL, NULL);
++  delete bean;
++}
++
+ int main()
+ {
+   ArattaiTelepathyBean *bean;
+ 
+   bean = new ArattaiTelepathyBean ();
+   TelepathyBridge::Initialize (bean);
+-
+-
+-  g_main_loop_quit (loop);
++  TelepathyBridge::Shutdown (bean);
+ 
+   return 0;
+ }
+-- 
+1.7.3.4
+

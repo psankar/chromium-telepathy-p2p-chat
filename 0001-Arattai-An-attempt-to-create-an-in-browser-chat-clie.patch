@@ -1,0 +1,177 @@
+From f449e3a063a617c464c29cf08584fee512d4be39 Mon Sep 17 00:00:00 2001
+From: Sankar P <sankar.curiosity@gmail.com>
+Date: Thu, 15 Sep 2011 22:32:05 +0530
+Subject: [PATCH 01/11] Arattai - An attempt to create an in-browser chat client
+
+---
+ chrome/browser/browser_resources.grd             |    1 +
+ chrome/browser/resources/arattai.html            |    5 +++
+ chrome/browser/ui/webui/arattai_ui.cc            |   32 ++++++++++++++++++++++
+ chrome/browser/ui/webui/arattai_ui.h             |   13 +++++++++
+ chrome/browser/ui/webui/chrome_web_ui_factory.cc |    4 +++
+ chrome/chrome_browser.gypi                       |    2 +
+ chrome/common/url_constants.cc                   |    2 +
+ chrome/common/url_constants.h                    |    2 +
+ 8 files changed, 61 insertions(+), 0 deletions(-)
+ create mode 100644 chrome/browser/resources/arattai.html
+ create mode 100644 chrome/browser/ui/webui/arattai_ui.cc
+ create mode 100644 chrome/browser/ui/webui/arattai_ui.h
+
+diff --git a/chrome/browser/browser_resources.grd b/chrome/browser/browser_resources.grd
+index d768df4..aec52c2 100644
+--- a/chrome/browser/browser_resources.grd
++++ b/chrome/browser/browser_resources.grd
+@@ -117,6 +117,7 @@
+       <include name="IDR_BUGREPORT_JS" file="resources\bug_report.js" flattenhtml="true" type="BINDATA" />
+       <include name="IDR_WEBSTORE_MANIFEST" file="resources\webstore_app\manifest.json" type="BINDATA" />
+       <include name="IDR_CLOUDPRINT_MANIFEST" file="resources\cloud_print_app\manifest.json" type="BINDATA" />
++      <include name="IDR_ARATTAI_HTML" file="resources\arattai.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" />
+       <if expr="pp_ifdef('chromeos')">
+         <include name="IDR_ABOUT_SYS_HTML" file="resources\about_sys.html" flattenhtml="true" type="BINDATA" />
+         <include name="IDR_ACTIVE_DOWNLOADS_HTML" file="resources\active_downloads.html" flattenhtml="true" type="BINDATA" />
+diff --git a/chrome/browser/resources/arattai.html b/chrome/browser/resources/arattai.html
+new file mode 100644
+index 0000000..ed105a8
+--- /dev/null
++++ b/chrome/browser/resources/arattai.html
+@@ -0,0 +1,5 @@
++<html>
++	<body>
++Hello World
++	</body>
++</html>
+diff --git a/chrome/browser/ui/webui/arattai_ui.cc b/chrome/browser/ui/webui/arattai_ui.cc
+new file mode 100644
+index 0000000..5d56287
+--- /dev/null
++++ b/chrome/browser/ui/webui/arattai_ui.cc
+@@ -0,0 +1,32 @@
++#include <iostream>
++
++using namespace std;
++
++#include "chrome/browser/ui/webui/arattai_ui.h"
++#include "chrome/browser/profiles/profile.h"
++#include "content/browser/tab_contents/tab_contents.h"
++#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
++#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
++#include "chrome/common/url_constants.h"
++#include "grit/generated_resources.h"
++#include "grit/browser_resources.h"
++
++namespace {
++
++ChromeWebUIDataSource *CreateArattaiUIHTMLSource() {
++  ChromeWebUIDataSource *source =
++      new ChromeWebUIDataSource(chrome::kChromeUIArattaiHost);
++
++  source->set_default_resource(IDR_ARATTAI_HTML);
++
++  return source;
++}
++
++} //namespace
++
++ArattaiUI::ArattaiUI(TabContents* contents) : ChromeWebUI(contents) {
++  // Set up the chrome://arattai/ source.
++  Profile* profile = Profile::FromBrowserContext(contents->browser_context());
++  profile->GetChromeURLDataManager()->AddDataSource(
++	CreateArattaiUIHTMLSource());
++}
+diff --git a/chrome/browser/ui/webui/arattai_ui.h b/chrome/browser/ui/webui/arattai_ui.h
+new file mode 100644
+index 0000000..19c9e45
+--- /dev/null
++++ b/chrome/browser/ui/webui/arattai_ui.h
+@@ -0,0 +1,13 @@
++#ifndef CHROME_BROWSER_UI_ArattaiUI_H_
++#define CHROME_BROWSER_UI_ArattaiUI_H_
++#pragma once
++
++#include "chrome/browser/ui/webui/chrome_web_ui.h"
++
++class ArattaiUI : public ChromeWebUI {
++ public:
++  explicit ArattaiUI(TabContents* contents);
++
++};
++
++#endif  // CHROME_BROWSER_UI_ArattaiUI_H_
+diff --git a/chrome/browser/ui/webui/chrome_web_ui_factory.cc b/chrome/browser/ui/webui/chrome_web_ui_factory.cc
+index 813e153..c989fcc 100644
+--- a/chrome/browser/ui/webui/chrome_web_ui_factory.cc
++++ b/chrome/browser/ui/webui/chrome_web_ui_factory.cc
+@@ -12,6 +12,7 @@
+ #include "chrome/browser/history/history_types.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/profiles/profile_manager.h"
++#include "chrome/browser/ui/webui/arattai_ui.h"
+ #include "chrome/browser/ui/webui/bookmarks_ui.h"
+ #include "chrome/browser/ui/webui/bug_report_ui.h"
+ #include "chrome/browser/ui/webui/constrained_html_ui.h"
+@@ -250,6 +251,9 @@ static WebUIFactoryFunction GetWebUIFactoryFunction(Profile* profile,
+     return &NewWebUI<PrintPreviewUI>;
+   }
+ 
++  if (url.host() == chrome::kChromeUIArattaiHost)
++	return &NewWebUI<ArattaiUI>;
++
+   if (url.spec() == chrome::kChromeUIConstrainedHTMLTestURL)
+     return &NewWebUI<ConstrainedHtmlUI>;
+ 
+diff --git a/chrome/chrome_browser.gypi b/chrome/chrome_browser.gypi
+index c5d10fd..5ee63ee 100644
+--- a/chrome/chrome_browser.gypi
++++ b/chrome/chrome_browser.gypi
+@@ -3495,6 +3495,8 @@
+         'browser/ui/web_applications/web_app_ui.h',
+         'browser/ui/webui/active_downloads_ui.cc',
+         'browser/ui/webui/active_downloads_ui.h',
++	'browser/ui/webui/arattai_ui.cc',
++	'browser/ui/webui/arattai_ui.h',
+         'browser/ui/webui/bookmarks_ui.cc',
+         'browser/ui/webui/bookmarks_ui.h',
+         'browser/ui/webui/bug_report_ui.cc',
+diff --git a/chrome/common/url_constants.cc b/chrome/common/url_constants.cc
+index 9221558..c66a157 100644
+--- a/chrome/common/url_constants.cc
++++ b/chrome/common/url_constants.cc
+@@ -62,6 +62,7 @@ const char kChromeUITermsURL[] = "chrome://terms/";
+ const char kChromeUITextfieldsURL[] = "chrome://textfields/";
+ const char kChromeUIVersionURL[] = "chrome://version/";
+ const char kChromeUIWorkersURL[] = "chrome://workers/";
++const char kChromeUIArattaiURL[] = "chrome://arattai/";
+ 
+ #if defined(OS_CHROMEOS)
+ const char kChromeUIActivationMessage[] = "chrome://activationmessage/";
+@@ -162,6 +163,7 @@ const char kChromeUITouchIconHost[] = "touch-icon";
+ const char kChromeUITracingHost[] = "tracing";
+ const char kChromeUIVersionHost[] = "version";
+ const char kChromeUIWorkersHost[] = "workers";
++const char kChromeUIArattaiHost[] = "arattai";
+ 
+ const char kChromeUIScreenshotPath[] = "screenshots";
+ const char kChromeUIThemePath[] = "theme";
+diff --git a/chrome/common/url_constants.h b/chrome/common/url_constants.h
+index 740a01b..4587b03 100644
+--- a/chrome/common/url_constants.h
++++ b/chrome/common/url_constants.h
+@@ -64,6 +64,7 @@ extern const char kChromeUITermsURL[];
+ extern const char kChromeUITextfieldsURL[];
+ extern const char kChromeUIVersionURL[];
+ extern const char kChromeUIWorkersURL[];
++extern const char kChromeUIArattaiURL[];
+ 
+ #if defined(OS_CHROMEOS)
+ extern const char kChromeUIActivationMessage[];
+@@ -160,6 +161,7 @@ extern const char kChromeUITouchIconHost[];
+ extern const char kChromeUITracingHost[];
+ extern const char kChromeUIVersionHost[];
+ extern const char kChromeUIWorkersHost[];
++extern const char kChromeUIArattaiHost[];
+ 
+ extern const char kChromeUIScreenshotPath[];
+ extern const char kChromeUIThemePath[];
+-- 
+1.7.3.4
+
